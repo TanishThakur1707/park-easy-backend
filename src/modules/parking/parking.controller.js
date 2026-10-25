@@ -37,6 +37,54 @@ const createParkingLot = async (req, res) => {
     }
 };
 
+const ParkingSlot = require("./parking-slot.model");
+
+const createParkingSlot = async (req, res) => {
+    try {
+        const { slotNumber, parkingLot } = req.body;
+
+        // 1. Validate required fields
+        if (!slotNumber || !parkingLot) {
+            return res.status(400).json({
+                success: false,
+                message: "slotNumber and parkingLot are required"
+            });
+        }
+
+        // 2. Check whether parking lot exists
+        const existingParkingLot = await ParkingLot.findById(parkingLot);
+
+        if (!existingParkingLot) {
+            return res.status(404).json({
+                success: false,
+                message: "Parking lot not found"
+            });
+        }
+
+        // 3. Create parking slot
+        const parkingSlot = await ParkingSlot.create({
+            slotNumber,
+            parkingLot
+        });
+
+        // 4. Send response
+        return res.status(201).json({
+            success: true,
+            message: "Parking slot created successfully",
+            data: parkingSlot
+        });
+
+    } catch (error) {
+        console.error("Create parking slot error:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error"
+        });
+    }
+};
+
 module.exports = {
-    createParkingLot
+    createParkingLot,
+    createParkingSlot
 };
