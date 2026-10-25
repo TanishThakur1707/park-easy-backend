@@ -84,7 +84,28 @@ const createParkingSlot = async (req, res) => {
     }
 };
 
+const getParkingLots = async (req, res) => {
+    try {
+        const parkingLots = await ParkingLot.find();
+
+        return res.status(200).json({
+            success: true,
+            message: "Parking lots fetched successfully",
+            data: parkingLots
+        });
+
+    } catch (error) {
+        console.error("Get parking lots error:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error"
+        });
+    }
+};
+
 module.exports = {
     createParkingLot,
-    createParkingSlot
+    createParkingSlot,
+    getParkingLots
 };
