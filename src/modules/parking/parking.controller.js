@@ -167,10 +167,67 @@ const getParkingSlot = async (req, res) => {
     }
 };
 
+const updateParkingSlotStatus = async (req, res) => {
+    try {
+        const { slotId } = req.params;
+        const { status } = req.body;
+
+        // 1. Validate status
+        if (!status) {
+            return res.status(400).json({
+                success: false,
+                message: "Status is required"
+            });
+        }
+
+        // 2. Check whether status is valid
+        const validStatuses = ["available", "occupied", "reserved"];
+
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid status"
+            });
+        }
+
+        // 3. Find the parking slot
+        const parkingSlot = await ParkingSlot.findById(slotId);
+
+        if (!parkingSlot) {
+            return res.status(404).json({
+                success: false,
+                message: "Parking slot not found"
+            });
+        }
+
+        // 4. Update status
+        parkingSlot.status = status;
+
+        // 5. Save updated slot
+        await parkingSlot.save();
+
+        // 6. Send response
+        return res.status(200).json({
+            success: true,
+            message: "Parking slot status updated successfully",
+            data: parkingSlot
+        });
+
+    } catch (error) {
+        console.error("Update parking slot status error:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error"
+        });
+    }
+};
+
 module.exports = {
     createParkingLot,
     createParkingSlot,
     getParkingLots,
     getParkingSlots,
-    getParkingSlot
+    getParkingSlot,
+    updateParkingSlotStatus
 };
