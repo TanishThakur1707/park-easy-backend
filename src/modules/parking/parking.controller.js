@@ -138,9 +138,39 @@ const getParkingSlots = async (req, res) => {
     }
 };
 
+const getParkingSlot = async (req, res) => {
+    try {
+        const { slotId } = req.params;
+
+        const parkingSlot = await ParkingSlot.findById(slotId);
+
+        if (!parkingSlot) {
+            return res.status(404).json({
+                success: false,
+                message: "Parking slot not found"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Parking slot fetched successfully",
+            data: parkingSlot
+        });
+
+    } catch (error) {
+        console.error("Get parking slot error:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error"
+        });
+    }
+};
+
 module.exports = {
     createParkingLot,
     createParkingSlot,
     getParkingLots,
-    getParkingSlots
+    getParkingSlots,
+    getParkingSlot
 };
