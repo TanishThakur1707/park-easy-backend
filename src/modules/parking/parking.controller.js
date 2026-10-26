@@ -103,9 +103,44 @@ const getParkingLots = async (req, res) => {
         });
     }
 };
+const getParkingSlots = async (req, res) => {
+    try {
+        const { lotId } = req.params;
+
+        // 1. Check whether parking lot exists
+        const parkingLot = await ParkingLot.findById(lotId);
+
+        if (!parkingLot) {
+            return res.status(404).json({
+                success: false,
+                message: "Parking lot not found"
+            });
+        }
+
+        // 2. Find all slots belonging to this parking lot
+        const parkingSlots = await ParkingSlot.find({
+            parkingLot: lotId
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "Parking slots fetched successfully",
+            data: parkingSlots
+        });
+
+    } catch (error) {
+        console.error("Get parking slots error:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error"
+        });
+    }
+};
 
 module.exports = {
     createParkingLot,
     createParkingSlot,
-    getParkingLots
+    getParkingLots,
+    getParkingSlots
 };
