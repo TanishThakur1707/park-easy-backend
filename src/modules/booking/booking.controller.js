@@ -90,7 +90,48 @@ const getMyBookings = async (req, res) => {
     }
 };
 
+const getBookingById = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+
+        // 1. Find the booking
+        const booking = await Booking.findById(bookingId);
+
+        // 2. Check whether booking exists
+        if (!booking) {
+            return res.status(404).json({
+                success: false,
+                message: "Booking not found"
+            });
+        }
+
+        // 3. Check whether this booking belongs to the logged-in user
+        if (booking.user.toString() !== req.user.userId) {
+            return res.status(403).json({
+                success: false,
+                message: "You are not authorized to view this booking"
+            });
+        }
+
+        // 4. Send booking
+        return res.status(200).json({
+            success: true,
+            message: "Booking fetched successfully",
+            data: booking
+        });
+
+    } catch (error) {
+        console.error("Get booking error:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error"
+        });
+    }
+};
+
 module.exports = {
     createBooking,
-    getMyBookings
+    getMyBookings,
+    getBookingById
 };
