@@ -130,8 +130,68 @@ const getBookingById = async (req, res) => {
     }
 };
 
+const cancelBooking = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+
+        // 1. Find the booking
+        const booking = await Booking.findById(bookingId);
+
+        if (!booking) {
+            return res.status(404).json({
+                success: false,
+                message: "Booking not found"
+            });
+        }
+
+        // 2. Check whether the booking belongs to the logged-in user
+        if (booking.user.toString() !== req.user.userId) {
+            return res.status(403).json({
+                success: false,
+                message: "You are not authorized to cancel this booking"
+            });
+        }
+
+        // 3. Check whether booking is already cancelled
+        if (booking.status === "cancelled") {
+            return res.status(400).json({
+                success: false,
+                message: "Booking is already cancelled"
+            });
+        }
+
+        // 4. Cancel the booking
+        booking.status = "cancelled";
+        await booking.save();
+
+        // 5. Make the parking slot available again
+        const parkingSlot = await ParkingSlot.findById(booking.parkingSlot);
+
+        if (parkingSlot) {
+            parkingSlot.status = "available";
+            await parkingSlot.save();
+        }
+
+        // 6. Send response
+        return res.status(200).json({
+            success: true,
+            message: "Booking cancelled successfully",
+            data: booking
+        });
+
+    } catch (error) {
+        console.error("Cancel booking error:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error"
+        });
+    }
+};
+
 module.exports = {
     createBooking,
     getMyBookings,
-    getBookingById
+    getBookingById,
+    cancelBooking
 };

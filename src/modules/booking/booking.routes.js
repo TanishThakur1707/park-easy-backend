@@ -3,7 +3,8 @@ const { protect } = require("../../middleware/auth.middleware");
 const {
     createBooking,
     getMyBookings,
-    getBookingById
+    getBookingById,
+    cancelBooking
 } = require("./booking.controller");
 
 const router = express.Router();
@@ -11,5 +12,6 @@ const router = express.Router();
 router.post("/", protect, createBooking);
 router.get("/", protect, getMyBookings);
 router.get("/:bookingId", protect, getBookingById);
+router.patch("/:bookingId/cancel", protect, cancelBooking);
 
 module.exports = router;
