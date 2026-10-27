@@ -39,7 +39,30 @@ const createBooking = async (req, res) => {
             });
         }
 
-        // 5. Create booking
+        // 5. Make sure booking does not start in the past
+        if (new Date(startTime) < new Date()) {
+            return res.status(400).json({
+                success: false,
+                message: "Booking start time cannot be in the past"
+            });
+        }
+
+        // 6. Check for overlapping booking
+        const overlappingBooking = await Booking.findOne({
+            parkingSlot,
+            status: "reserved",
+            startTime: { $lt: new Date(endTime) },
+            endTime: { $gt: new Date(startTime) }
+        });
+
+        if (overlappingBooking) {
+            return res.status(400).json({
+                success: false,
+                message: "Parking slot is already booked for this time"
+            });
+        }
+
+        // 7. Create booking
         const booking = await Booking.create({
             user: req.user.userId,
             parkingSlot,
@@ -47,11 +70,11 @@ const createBooking = async (req, res) => {
             endTime
         });
 
-        // 6. Reserve the parking slot
+        // 8. Reserve the parking slot
         existingSlot.status = "reserved";
         await existingSlot.save();
 
-        // 7. Send response
+        // 9. Send response
         return res.status(201).json({
             success: true,
             message: "Booking created successfully",
@@ -159,12 +182,19 @@ const cancelBooking = async (req, res) => {
                 message: "Booking is already cancelled"
             });
         }
+        // 4. Check whether booking has already ended
+if (new Date(booking.endTime) <= new Date()) {
+    return res.status(400).json({
+        success: false,
+        message: "Booking has already ended and cannot be cancelled"
+    });
+}
 
-        // 4. Cancel the booking
+        // 5. Cancel the booking
         booking.status = "cancelled";
         await booking.save();
 
-        // 5. Make the parking slot available again
+        // 6. Make the parking slot available again
         const parkingSlot = await ParkingSlot.findById(booking.parkingSlot);
 
         if (parkingSlot) {
@@ -172,7 +202,7 @@ const cancelBooking = async (req, res) => {
             await parkingSlot.save();
         }
 
-        // 6. Send response
+        // 7. Send response
         return res.status(200).json({
             success: true,
             message: "Booking cancelled successfully",
