@@ -5,7 +5,8 @@ const {
     getParkingLots,
     getParkingSlots,
     getParkingSlot,
-    updateParkingSlotStatus
+    updateParkingSlotStatus,
+    checkSlotAvailability
 } = require("./parking.controller");
 
 const router = express.Router();
@@ -16,5 +17,6 @@ router.get("/lots", getParkingLots);
 router.get("/lots/:lotId/slots", getParkingSlots);
 router.get("/slots/:slotId", getParkingSlot);
 router.patch("/slots/:slotId/status", updateParkingSlotStatus);
+router.get("/slots/:slotId/availability", checkSlotAvailability);
 
 module.exports = router;
