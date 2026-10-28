@@ -1,6 +1,7 @@
 const Booking = require("./booking.model");
 const ParkingSlot = require("../parking/parking-slot.model");
 
+
 const createBooking = async (req, res) => {
     try {
         const { parkingSlot, startTime, endTime } = req.body;
@@ -23,15 +24,7 @@ const createBooking = async (req, res) => {
             });
         }
 
-        // 3. Check whether slot is available
-        if (existingSlot.status !== "available") {
-            return res.status(400).json({
-                success: false,
-                message: "Parking slot is not available"
-            });
-        }
-
-        // 4. Make sure end time is after start time
+        // 3. Make sure end time is after start time
         if (new Date(endTime) <= new Date(startTime)) {
             return res.status(400).json({
                 success: false,
@@ -39,7 +32,7 @@ const createBooking = async (req, res) => {
             });
         }
 
-        // 5. Make sure booking does not start in the past
+        // 4. Make sure booking does not start in the past
         if (new Date(startTime) < new Date()) {
             return res.status(400).json({
                 success: false,
@@ -47,7 +40,7 @@ const createBooking = async (req, res) => {
             });
         }
 
-        // 6. Check for overlapping booking
+        // 5. Check for overlapping booking
         const overlappingBooking = await Booking.findOne({
             parkingSlot,
             status: "reserved",
@@ -62,7 +55,7 @@ const createBooking = async (req, res) => {
             });
         }
 
-        // 7. Create booking
+        // 6. Create booking
         const booking = await Booking.create({
             user: req.user.userId,
             parkingSlot,
@@ -70,11 +63,7 @@ const createBooking = async (req, res) => {
             endTime
         });
 
-        // 8. Reserve the parking slot
-        existingSlot.status = "reserved";
-        await existingSlot.save();
-
-        // 9. Send response
+        // 7. Send response
         return res.status(201).json({
             success: true,
             message: "Booking created successfully",
@@ -90,6 +79,7 @@ const createBooking = async (req, res) => {
         });
     }
 };
+
 
 const getMyBookings = async (req, res) => {
     try {
@@ -153,6 +143,7 @@ const getBookingById = async (req, res) => {
     }
 };
 
+
 const cancelBooking = async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -182,25 +173,26 @@ const cancelBooking = async (req, res) => {
                 message: "Booking is already cancelled"
             });
         }
-        // 4. Check whether booking has already ended
-if (new Date(booking.endTime) <= new Date()) {
-    return res.status(400).json({
-        success: false,
-        message: "Booking has already ended and cannot be cancelled"
-    });
-}
 
-        // 5. Cancel the booking
+        // 4. Check whether booking has already completed
+        if (booking.status === "completed") {
+            return res.status(400).json({
+                success: false,
+                message: "Completed booking cannot be cancelled"
+            });
+        }
+
+        // 5. Check whether booking has already ended
+        if (new Date(booking.endTime) <= new Date()) {
+            return res.status(400).json({
+                success: false,
+                message: "Booking has already ended and cannot be cancelled"
+            });
+        }
+
+        // 6. Cancel the booking
         booking.status = "cancelled";
         await booking.save();
-
-        // 6. Make the parking slot available again
-        const parkingSlot = await ParkingSlot.findById(booking.parkingSlot);
-
-        if (parkingSlot) {
-            parkingSlot.status = "available";
-            await parkingSlot.save();
-        }
 
         // 7. Send response
         return res.status(200).json({
@@ -218,6 +210,7 @@ if (new Date(booking.endTime) <= new Date()) {
         });
     }
 };
+
 
 module.exports = {
     createBooking,

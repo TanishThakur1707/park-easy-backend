@@ -1,32 +1,37 @@
 const cron = require("node-cron");
 const Booking = require("../modules/booking/booking.model");
-const ParkingSlot = require("../modules/parking/parking-slot.model");
 
 const startBookingScheduler = () => {
 
     cron.schedule("* * * * *", async () => {
 
-        const expiredBookings = await Booking.find({
-            status: "reserved",
-            endTime: { $lte: new Date() }
-        });
+        console.log("Booking scheduler running...");
 
-        for (const booking of expiredBookings) {
+        try {
+            // Find all reserved bookings whose end time has passed
+            const expiredBookings = await Booking.find({
+                status: "reserved",
+                endTime: { $lte: new Date() }
+            });
 
-            booking.status = "completed";
-            await booking.save();
+            console.log("Expired bookings found:", expiredBookings.length);
 
-            const parkingSlot = await ParkingSlot.findById(
-                booking.parkingSlot
-            );
+            // Mark expired bookings as completed
+            for (const booking of expiredBookings) {
 
-            if (parkingSlot) {
-                parkingSlot.status = "available";
-                await parkingSlot.save();
+                booking.status = "completed";
+
+                await booking.save();
             }
-        }
 
+        } catch (error) {
+            console.error(
+                "Booking scheduler error:",
+                error.message
+            );
+        }
     });
+
 };
 
 module.exports = startBookingScheduler;
