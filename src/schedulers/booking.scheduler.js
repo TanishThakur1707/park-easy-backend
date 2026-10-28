@@ -8,21 +8,44 @@ const startBookingScheduler = () => {
         console.log("Booking scheduler running...");
 
         try {
-            // Find all reserved bookings whose end time has passed
-            const expiredBookings = await Booking.find({
+            const now = new Date();
+
+            // 1. Start bookings whose start time has arrived
+            const bookingsToActivate = await Booking.find({
                 status: "reserved",
-                endTime: { $lte: new Date() }
+                startTime: { $lte: now },
+                endTime: { $gt: now }
             });
 
-            console.log("Expired bookings found:", expiredBookings.length);
+            for (const booking of bookingsToActivate) {
 
-            // Mark expired bookings as completed
-            for (const booking of expiredBookings) {
+                booking.status = "active";
+
+                await booking.save();
+            }
+
+            console.log(
+                "Bookings activated:",
+                bookingsToActivate.length
+            );
+
+            // 2. Complete bookings whose end time has passed
+            const bookingsToComplete = await Booking.find({
+                status: "active",
+                endTime: { $lte: now }
+            });
+
+            for (const booking of bookingsToComplete) {
 
                 booking.status = "completed";
 
                 await booking.save();
             }
+
+            console.log(
+                "Bookings completed:",
+                bookingsToComplete.length
+            );
 
         } catch (error) {
             console.error(

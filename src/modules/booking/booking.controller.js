@@ -41,12 +41,12 @@ const createBooking = async (req, res) => {
         }
 
         // 5. Check for overlapping booking
-        const overlappingBooking = await Booking.findOne({
-            parkingSlot,
-            status: "reserved",
-            startTime: { $lt: new Date(endTime) },
-            endTime: { $gt: new Date(startTime) }
-        });
+ const overlappingBooking = await Booking.findOne({
+    parkingSlot,
+    status: { $in: ["reserved", "active"] },
+    startTime: { $lt: new Date(endTime) },
+    endTime: { $gt: new Date(startTime) }
+});
 
         if (overlappingBooking) {
             return res.status(400).json({

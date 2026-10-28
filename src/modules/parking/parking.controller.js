@@ -1,4 +1,5 @@
 const ParkingLot = require("./parking-lot.model");
+const Booking = require("../booking/booking.model");
 
 const createParkingLot = async (req, res) => {
     try {
@@ -223,11 +224,91 @@ const updateParkingSlotStatus = async (req, res) => {
     }
 };
 
+const checkSlotAvailability = async (req, res) => {
+    try {
+        const { slotId } = req.params;
+        const { startTime, endTime } = req.query;
+
+        // 1. Validate required fields
+        if (!startTime || !endTime) {
+            return res.status(400).json({
+                success: false,
+                message: "startTime and endTime are required"
+            });
+        }
+
+        // 2. Convert times to Date objects
+        const requestedStartTime = new Date(startTime);
+        const requestedEndTime = new Date(endTime);
+
+        // 3. Validate dates
+        if (
+            isNaN(requestedStartTime.getTime()) ||
+            isNaN(requestedEndTime.getTime())
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid startTime or endTime"
+            });
+        }
+
+        // 4. Make sure end time is after start time
+        if (requestedEndTime <= requestedStartTime) {
+            return res.status(400).json({
+                success: false,
+                message: "End time must be after start time"
+            });
+        }
+
+        // 5. Check whether parking slot exists
+        const parkingSlot = await ParkingSlot.findById(slotId);
+
+        if (!parkingSlot) {
+            return res.status(404).json({
+                success: false,
+                message: "Parking slot not found"
+            });
+        }
+
+        // 6. Check for overlapping booking
+       const overlappingBooking = await Booking.findOne({
+    parkingSlot: slotId,
+    status: { $in: ["reserved", "active"] },
+    startTime: { $lt: requestedEndTime },
+    endTime: { $gt: requestedStartTime }
+});
+
+        // 7. Return availability
+        if (overlappingBooking) {
+            return res.status(200).json({
+                success: true,
+                available: false,
+                message: "Parking slot is already booked for this time"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            available: true,
+            message: "Parking slot is available for this time"
+        });
+
+    } catch (error) {
+        console.error("Check slot availability error:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error"
+        });
+    }
+};
+
 module.exports = {
     createParkingLot,
     createParkingSlot,
     getParkingLots,
     getParkingSlots,
     getParkingSlot,
-    updateParkingSlotStatus
+    updateParkingSlotStatus,
+    checkSlotAvailability
 };
