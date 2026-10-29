@@ -1,3 +1,4 @@
+
 const mongoose = require("mongoose");
 
 const parkingSlotSchema = new mongoose.Schema(
@@ -18,6 +19,12 @@ const parkingSlotSchema = new mongoose.Schema(
             type: String,
             enum: ["available", "occupied", "reserved"],
             default: "available"
+        },
+
+        // Used to serialize concurrent booking attempts for this slot
+        bookingVersion: {
+            type: Number,
+            default: 0
         }
     },
     {

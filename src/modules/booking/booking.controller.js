@@ -1,8 +1,12 @@
 const Booking = require("./booking.model");
 const ParkingSlot = require("../parking/parking-slot.model");
+const mongoose = require("mongoose");
+
 
 
 const createBooking = async (req, res) => {
+    let session;
+
     try {
         const { parkingSlot, startTime, endTime } = req.body;
 
@@ -14,56 +18,105 @@ const createBooking = async (req, res) => {
             });
         }
 
-        // 2. Check whether parking slot exists
-        const existingSlot = await ParkingSlot.findById(parkingSlot);
-
-        if (!existingSlot) {
-            return res.status(404).json({
+        // 2. Validate the parking slot ID
+        if (!mongoose.isValidObjectId(parkingSlot)) {
+            return res.status(400).json({
                 success: false,
-                message: "Parking slot not found"
+                message: "Invalid parking slot ID"
             });
         }
 
-        // 3. Make sure end time is after start time
-        if (new Date(endTime) <= new Date(startTime)) {
+        // 3. Validate booking dates
+        const requestedStartTime = new Date(startTime);
+        const requestedEndTime = new Date(endTime);
+
+        if (
+            Number.isNaN(requestedStartTime.getTime()) ||
+            Number.isNaN(requestedEndTime.getTime())
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid start time or end time"
+            });
+        }
+
+        if (requestedEndTime <= requestedStartTime) {
             return res.status(400).json({
                 success: false,
                 message: "End time must be after start time"
             });
         }
 
-        // 4. Make sure booking does not start in the past
-        if (new Date(startTime) < new Date()) {
+        if (requestedStartTime < new Date()) {
             return res.status(400).json({
                 success: false,
                 message: "Booking start time cannot be in the past"
             });
         }
 
-        // 5. Check for overlapping booking
- const overlappingBooking = await Booking.findOne({
-    parkingSlot,
-    status: { $in: ["reserved", "active"] },
-    startTime: { $lt: new Date(endTime) },
-    endTime: { $gt: new Date(startTime) }
-});
+        // 4. Start a MongoDB transaction
+        session = await mongoose.startSession();
 
-        if (overlappingBooking) {
-            return res.status(400).json({
-                success: false,
-                message: "Parking slot is already booked for this time"
-            });
-        }
+        let booking;
 
-        // 6. Create booking
-        const booking = await Booking.create({
-            user: req.user.userId,
-            parkingSlot,
-            startTime,
-            endTime
-        });
+        await session.withTransaction(
+            async () => {
+                // 5. Write to this slot document.
+                // Concurrent transactions for the same slot conflict here.
+                const slot = await ParkingSlot.findOneAndUpdate(
+                    { _id: parkingSlot },
+                    { $inc: { bookingVersion: 1 } },
+                    {
+                        new: true,
+                        session
+                    }
+                );
 
-        // 7. Send response
+                if (!slot) {
+                    const error = new Error("Parking slot not found");
+                    error.statusCode = 404;
+                    throw error;
+                }
+
+                // 6. Check for overlapping bookings inside the transaction
+                const overlappingBooking = await Booking.findOne({
+                    parkingSlot: slot._id,
+                    status: { $in: ["reserved", "active"] },
+                    startTime: { $lt: requestedEndTime },
+                    endTime: { $gt: requestedStartTime }
+                }).session(session);
+
+                if (overlappingBooking) {
+                    const error = new Error(
+                        "Parking slot is already booked for this time"
+                    );
+                    error.statusCode = 409;
+                    throw error;
+                }
+
+                // 7. Create the booking in the same transaction
+                const createdBookings = await Booking.create(
+                    [
+                        {
+                            user: req.user.userId,
+                            parkingSlot: slot._id,
+                            startTime: requestedStartTime,
+                            endTime: requestedEndTime
+                        }
+                    ],
+                    { session }
+                );
+
+                booking = createdBookings[0];
+            },
+            {
+                readPreference: "primary",
+                readConcern: { level: "snapshot" },
+                writeConcern: { w: "majority" }
+            }
+        );
+
+        // 8. Return success only after the transaction commits
         return res.status(201).json({
             success: true,
             message: "Booking created successfully",
@@ -73,12 +126,20 @@ const createBooking = async (req, res) => {
     } catch (error) {
         console.error("Create booking error:", error.message);
 
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            message: "Internal server error"
+            message: error.statusCode
+                ? error.message
+                : "Internal server error"
         });
+
+    } finally {
+        if (session) {
+            await session.endSession();
+        }
     }
 };
+
 
 
 const getMyBookings = async (req, res) => {
@@ -144,72 +205,109 @@ const getBookingById = async (req, res) => {
 };
 
 
+
 const cancelBooking = async (req, res) => {
+    let session;
+
     try {
         const { bookingId } = req.params;
 
-        // 1. Find the booking
-        const booking = await Booking.findById(bookingId);
-
-        if (!booking) {
-            return res.status(404).json({
-                success: false,
-                message: "Booking not found"
-            });
-        }
-
-        // 2. Check whether the booking belongs to the logged-in user
-        if (booking.user.toString() !== req.user.userId) {
-            return res.status(403).json({
-                success: false,
-                message: "You are not authorized to cancel this booking"
-            });
-        }
-
-        // 3. Check whether booking is already cancelled
-        if (booking.status === "cancelled") {
+        if (!mongoose.isValidObjectId(bookingId)) {
             return res.status(400).json({
                 success: false,
-                message: "Booking is already cancelled"
+                message: "Invalid booking ID"
             });
         }
 
-        // 4. Check whether booking has already completed
-        if (booking.status === "completed") {
-            return res.status(400).json({
-                success: false,
-                message: "Completed booking cannot be cancelled"
-            });
-        }
+        // Start a transaction
+        session = await mongoose.startSession();
 
-        // 5. Check whether booking has already ended
-        if (new Date(booking.endTime) <= new Date()) {
-            return res.status(400).json({
-                success: false,
-                message: "Booking has already ended and cannot be cancelled"
-            });
-        }
+        let cancelledBooking;
 
-        // 6. Cancel the booking
-        booking.status = "cancelled";
-        await booking.save();
+        await session.withTransaction(async () => {
+            // Read the booking inside the transaction
+            const booking = await Booking.findById(bookingId).session(session);
 
-        // 7. Send response
+            if (!booking) {
+                const error = new Error("Booking not found");
+                error.statusCode = 404;
+                throw error;
+            }
+
+            // Check ownership
+            if (booking.user.toString() !== req.user.userId) {
+                const error = new Error(
+                    "You are not authorized to cancel this booking"
+                );
+                error.statusCode = 403;
+                throw error;
+            }
+
+            if (booking.status === "cancelled") {
+                const error = new Error("Booking is already cancelled");
+                error.statusCode = 400;
+                throw error;
+            }
+
+            if (booking.status === "completed") {
+                const error = new Error(
+                    "Completed booking cannot be cancelled"
+                );
+                error.statusCode = 400;
+                throw error;
+            }
+
+            if (new Date(booking.endTime) <= new Date()) {
+                const error = new Error(
+                    "Booking has already ended and cannot be cancelled"
+                );
+                error.statusCode = 400;
+                throw error;
+            }
+
+            // Coordinate with booking creation for this slot
+            const slot = await ParkingSlot.findOneAndUpdate(
+                { _id: booking.parkingSlot },
+                { $inc: { bookingVersion: 1 } },
+                { new: true, session }
+            );
+
+            if (!slot) {
+                const error = new Error("Parking slot not found");
+                error.statusCode = 404;
+                throw error;
+            }
+
+            // Change status inside the same transaction
+            booking.status = "cancelled";
+            await booking.save({ session });
+
+            cancelledBooking = booking;
+        });
+
         return res.status(200).json({
             success: true,
             message: "Booking cancelled successfully",
-            data: booking
+            data: cancelledBooking
         });
 
     } catch (error) {
         console.error("Cancel booking error:", error.message);
 
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            message: "Internal server error"
+            message: error.statusCode
+                ? error.message
+                : "Internal server error"
         });
+
+    } finally {
+        if (session) {
+            await session.endSession();
+        }
     }
 };
+
 
 
 module.exports = {
