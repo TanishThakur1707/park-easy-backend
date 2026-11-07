@@ -2,49 +2,43 @@ const cron = require("node-cron");
 const Booking = require("../modules/booking/booking.model");
 
 const startBookingScheduler = () => {
-
     cron.schedule("* * * * *", async () => {
-
         console.log("Booking scheduler running...");
 
         try {
             const now = new Date();
 
-            // 1. Start bookings whose start time has arrived
-            const bookingsToActivate = await Booking.find({
-                status: "reserved",
-                startTime: { $lte: now },
-                endTime: { $gt: now }
-            });
-
-            for (const booking of bookingsToActivate) {
-
-                booking.status = "active";
-
-                await booking.save();
-            }
+            // 1. Activate bookings whose start time has arrived.
+            const activationResult = await Booking.updateMany(
+                {
+                    status: "reserved",
+                    startTime: { $lte: now },
+                    endTime: { $gt: now }
+                },
+                {
+                    $set: { status: "active" }
+                }
+            );
 
             console.log(
                 "Bookings activated:",
-                bookingsToActivate.length
+                activationResult.modifiedCount
             );
 
-            // 2. Complete bookings whose end time has passed
-            const bookingsToComplete = await Booking.find({
-                status: "active",
-                endTime: { $lte: now }
-            });
-
-            for (const booking of bookingsToComplete) {
-
-                booking.status = "completed";
-
-                await booking.save();
-            }
+            // 2. Complete bookings whose end time has passed.
+            const completionResult = await Booking.updateMany(
+                {
+                    status: "active",
+                    endTime: { $lte: now }
+                },
+                {
+                    $set: { status: "completed" }
+                }
+            );
 
             console.log(
                 "Bookings completed:",
-                bookingsToComplete.length
+                completionResult.modifiedCount
             );
 
         } catch (error) {
@@ -54,7 +48,6 @@ const startBookingScheduler = () => {
             );
         }
     });
-
 };
 
 module.exports = startBookingScheduler;
