@@ -1,3 +1,4 @@
+
 const cron = require("node-cron");
 const Booking = require("../modules/booking/booking.model");
 
@@ -25,7 +26,7 @@ const startBookingScheduler = () => {
                 activationResult.modifiedCount
             );
 
-            // 2. Complete bookings whose end time has passed.
+            // 2. Complete bookings that were active and have ended.
             const completionResult = await Booking.updateMany(
                 {
                     status: "active",
@@ -39,6 +40,22 @@ const startBookingScheduler = () => {
             console.log(
                 "Bookings completed:",
                 completionResult.modifiedCount
+            );
+
+            // 3. Expire reserved bookings whose end time has passed.
+            const expirationResult = await Booking.updateMany(
+                {
+                    status: "reserved",
+                    endTime: { $lte: now }
+                },
+                {
+                    $set: { status: "expired" }
+                }
+            );
+
+            console.log(
+                "Bookings expired:",
+                expirationResult.modifiedCount
             );
 
         } catch (error) {

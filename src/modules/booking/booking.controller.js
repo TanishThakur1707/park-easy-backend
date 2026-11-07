@@ -206,6 +206,7 @@ const getBookingById = async (req, res) => {
 
 
 
+
 const cancelBooking = async (req, res) => {
     let session;
 
@@ -219,13 +220,13 @@ const cancelBooking = async (req, res) => {
             });
         }
 
-        // Start a transaction
         session = await mongoose.startSession();
 
         let cancelledBooking;
 
         await session.withTransaction(async () => {
-            // Read the booking inside the transaction
+
+            // 1. Find the booking inside the transaction
             const booking = await Booking.findById(bookingId).session(session);
 
             if (!booking) {
@@ -234,7 +235,7 @@ const cancelBooking = async (req, res) => {
                 throw error;
             }
 
-            // Check ownership
+            // 2. Verify ownership
             if (booking.user.toString() !== req.user.userId) {
                 const error = new Error(
                     "You are not authorized to cancel this booking"
@@ -243,21 +244,31 @@ const cancelBooking = async (req, res) => {
                 throw error;
             }
 
+            // 3. Validate current booking status
             if (booking.status === "cancelled") {
                 const error = new Error("Booking is already cancelled");
                 error.statusCode = 400;
                 throw error;
             }
 
-            if (booking.status === "completed") {
-                const error = new Error(
-                    "Completed booking cannot be cancelled"
-                );
+           if (["completed", "expired"].includes(booking.status)) {
+    const error = new Error(
+        "Completed or expired booking cannot be cancelled"
+    );
+    error.statusCode = 400;
+    throw error;
+}
+
+            if (!["reserved", "active"].includes(booking.status)) {
+                const error = new Error("Invalid booking status");
                 error.statusCode = 400;
                 throw error;
             }
 
-            if (new Date(booking.endTime) <= new Date()) {
+            // 4. Check whether the booking has already ended
+            const now = new Date();
+
+            if (booking.endTime <= now) {
                 const error = new Error(
                     "Booking has already ended and cannot be cancelled"
                 );
@@ -265,11 +276,14 @@ const cancelBooking = async (req, res) => {
                 throw error;
             }
 
-            // Coordinate with booking creation for this slot
+            // 5. Coordinate with booking creation
             const slot = await ParkingSlot.findOneAndUpdate(
                 { _id: booking.parkingSlot },
                 { $inc: { bookingVersion: 1 } },
-                { new: true, session }
+                {
+                    new: true,
+                    session
+                }
             );
 
             if (!slot) {
@@ -278,11 +292,31 @@ const cancelBooking = async (req, res) => {
                 throw error;
             }
 
-            // Change status inside the same transaction
-            booking.status = "cancelled";
-            await booking.save({ session });
+            // 6. Atomically cancel only if the booking is still cancellable
+            cancelledBooking = await Booking.findOneAndUpdate(
+                {
+                    _id: bookingId,
+                    user: req.user.userId,
+                    status: { $in: ["reserved", "active"] },
+                    endTime: { $gt: now }
+                },
+                {
+                    $set: { status: "cancelled" }
+                },
+                {
+                    new: true,
+                    runValidators: true,
+                    session
+                }
+            );
 
-            cancelledBooking = booking;
+            if (!cancelledBooking) {
+                const error = new Error(
+                    "Booking could not be cancelled because its status has changed"
+                );
+                error.statusCode = 409;
+                throw error;
+            }
         });
 
         return res.status(200).json({
@@ -307,6 +341,7 @@ const cancelBooking = async (req, res) => {
         }
     }
 };
+
 
 
 
