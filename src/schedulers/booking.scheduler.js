@@ -1,6 +1,83 @@
 
 const cron = require("node-cron");
+const mongoose = require("mongoose");
+
 const Booking = require("../modules/booking/booking.model");
+const ParkingSlot = require("../modules/parking/parking-slot.model");
+const { syncSlotOccupancy } = require("../modules/parking/parking.service");
+
+const processBookingTransition = async (
+    bookingId,
+    expectedStatus,
+    newStatus,
+    now
+) => {
+    const session = await mongoose.startSession();
+
+    try {
+        await session.withTransaction(
+            async () => {
+                const booking = await Booking.findById(bookingId)
+                    .session(session);
+
+                if (!booking || booking.status !== expectedStatus) {
+                    return;
+                }
+
+                const lockedSlot = await ParkingSlot.findByIdAndUpdate(
+                    booking.parkingSlot,
+                    {
+                        $inc: { bookingVersion: 1 }
+                    },
+                    {
+                        new: true,
+                        session
+                    }
+                );
+
+                if (!lockedSlot) {
+                    throw new Error("Parking slot not found");
+                }
+
+                const transitionFilter = {
+                    _id: bookingId,
+                    status: expectedStatus
+                };
+
+                if (newStatus === "active") {
+                    transitionFilter.startTime = { $lte: now };
+                    transitionFilter.endTime = { $gt: now };
+                } else {
+                    transitionFilter.endTime = { $lte: now };
+                }
+
+                const result = await Booking.updateOne(
+                    transitionFilter,
+                    {
+                        $set: { status: newStatus }
+                    },
+                    { session }
+                );
+
+                if (result.modifiedCount === 0) {
+                    return;
+                }
+
+                await syncSlotOccupancy(
+                    booking.parkingSlot,
+                    session
+                );
+            },
+            {
+                readPreference: "primary",
+                readConcern: { level: "snapshot" },
+                writeConcern: { w: "majority" }
+            }
+        );
+    } finally {
+        await session.endSession();
+    }
+};
 
 const startBookingScheduler = () => {
     cron.schedule("* * * * *", async () => {
@@ -9,62 +86,70 @@ const startBookingScheduler = () => {
         try {
             const now = new Date();
 
-            // 1. Activate bookings whose start time has arrived.
-            const activationResult = await Booking.updateMany(
-                {
-                    status: "reserved",
-                    startTime: { $lte: now },
-                    endTime: { $gt: now }
-                },
-                {
-                    $set: { status: "active" }
-                }
-            );
+            const bookingsToActivate = await Booking.find({
+                status: "reserved",
+                startTime: { $lte: now },
+                endTime: { $gt: now }
+            }).select("_id");
+
+            for (const booking of bookingsToActivate) {
+                await processBookingTransition(
+                    booking._id,
+                    "reserved",
+                    "active",
+                    now
+                );
+            }
 
             console.log(
-                "Bookings activated:",
-                activationResult.modifiedCount
+                "Bookings processed for activation:",
+                bookingsToActivate.length
             );
 
-            // 2. Complete bookings that were active and have ended.
-            const completionResult = await Booking.updateMany(
-                {
-                    status: "active",
-                    endTime: { $lte: now }
-                },
-                {
-                    $set: { status: "completed" }
-                }
-            );
+            const bookingsToComplete = await Booking.find({
+                status: "active",
+                endTime: { $lte: now }
+            }).select("_id");
 
-            console.log(
-                "Bookings completed:",
-                completionResult.modifiedCount
-            );
-
-            // 3. Expire reserved bookings whose end time has passed.
-            const expirationResult = await Booking.updateMany(
-                {
-                    status: "reserved",
-                    endTime: { $lte: now }
-                },
-                {
-                    $set: { status: "expired" }
-                }
-            );
+            for (const booking of bookingsToComplete) {
+                await processBookingTransition(
+                    booking._id,
+                    "active",
+                    "completed",
+                    now
+                );
+            }
 
             console.log(
-                "Bookings expired:",
-                expirationResult.modifiedCount
+                "Bookings processed for completion:",
+                bookingsToComplete.length
+            );
+
+            const bookingsToExpire = await Booking.find({
+                status: "reserved",
+                endTime: { $lte: now }
+            }).select("_id");
+
+            for (const booking of bookingsToExpire) {
+                await processBookingTransition(
+                    booking._id,
+                    "reserved",
+                    "expired",
+                    now
+                );
+            }
+
+            console.log(
+                "Bookings processed for expiration:",
+                bookingsToExpire.length
             );
 
         } catch (error) {
-            console.error(
-                "Booking scheduler error:",
-                error.message
-            );
+            console.error("Booking scheduler error:", error);
         }
     });
 };
 
 module.exports = startBookingScheduler;
+
+
