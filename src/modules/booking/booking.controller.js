@@ -1,6 +1,7 @@
 const Booking = require("./booking.model");
 const ParkingSlot = require("../parking/parking-slot.model");
 const mongoose = require("mongoose");
+const { syncSlotOccupancy } = require("../parking/parking.service");
 
 
 
@@ -317,6 +318,8 @@ const cancelBooking = async (req, res) => {
                 error.statusCode = 409;
                 throw error;
             }
+            // 7. Synchronize parking slot occupancy
+await syncSlotOccupancy(booking.parkingSlot, session);
         });
 
         return res.status(200).json({
