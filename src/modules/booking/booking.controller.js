@@ -5,64 +5,26 @@ const { syncSlotOccupancy } = require("../parking/parking.service");
 
 
 
+
 const createBooking = async (req, res) => {
     let session;
 
     try {
         const { parkingSlot, startTime, endTime } = req.body;
 
-        // 1. Validate required fields
-        if (!parkingSlot || !startTime || !endTime) {
-            return res.status(400).json({
-                success: false,
-                message: "parkingSlot, startTime and endTime are required"
-            });
-        }
-
-        // 2. Validate the parking slot ID
-        if (!mongoose.isValidObjectId(parkingSlot)) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid parking slot ID"
-            });
-        }
-
-        // 3. Validate booking dates
+        // Convert validated dates into JavaScript Date objects
         const requestedStartTime = new Date(startTime);
         const requestedEndTime = new Date(endTime);
 
-        if (
-            Number.isNaN(requestedStartTime.getTime()) ||
-            Number.isNaN(requestedEndTime.getTime())
-        ) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid start time or end time"
-            });
-        }
-
-        if (requestedEndTime <= requestedStartTime) {
-            return res.status(400).json({
-                success: false,
-                message: "End time must be after start time"
-            });
-        }
-
-        if (requestedStartTime < new Date()) {
-            return res.status(400).json({
-                success: false,
-                message: "Booking start time cannot be in the past"
-            });
-        }
-
-        // 4. Start a MongoDB transaction
+        // 1. Start a MongoDB transaction
         session = await mongoose.startSession();
 
         let booking;
 
         await session.withTransaction(
             async () => {
-                // 5. Write to this slot document.
+
+                // 2. Write to this slot document.
                 // Concurrent transactions for the same slot conflict here.
                 const slot = await ParkingSlot.findOneAndUpdate(
                     { _id: parkingSlot },
@@ -79,7 +41,7 @@ const createBooking = async (req, res) => {
                     throw error;
                 }
 
-                // 6. Check for overlapping bookings inside the transaction
+                // 3. Check for overlapping bookings inside the transaction
                 const overlappingBooking = await Booking.findOne({
                     parkingSlot: slot._id,
                     status: { $in: ["reserved", "active"] },
@@ -95,7 +57,7 @@ const createBooking = async (req, res) => {
                     throw error;
                 }
 
-                // 7. Create the booking in the same transaction
+                // 4. Create the booking in the same transaction
                 const createdBookings = await Booking.create(
                     [
                         {
@@ -117,7 +79,7 @@ const createBooking = async (req, res) => {
             }
         );
 
-        // 8. Return success only after the transaction commits
+        // 5. Return success only after the transaction commits
         return res.status(201).json({
             success: true,
             message: "Booking created successfully",
@@ -140,6 +102,7 @@ const createBooking = async (req, res) => {
         }
     }
 };
+
 
 
 
@@ -214,12 +177,7 @@ const cancelBooking = async (req, res) => {
     try {
         const { bookingId } = req.params;
 
-        if (!mongoose.isValidObjectId(bookingId)) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid booking ID"
-            });
-        }
+       
 
         session = await mongoose.startSession();
 
