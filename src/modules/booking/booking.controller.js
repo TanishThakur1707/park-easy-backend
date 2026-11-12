@@ -106,16 +106,47 @@ const createBooking = async (req, res) => {
 
 
 
+
 const getMyBookings = async (req, res) => {
     try {
+        // 1. Get pagination parameters from query string
+        const page = Math.max(parseInt(req.query.page) || 1, 1);
+        const limit = Math.min(
+            Math.max(parseInt(req.query.limit) || 10, 1),
+            50
+        );
+
+        // 2. Calculate how many documents to skip
+        const skip = (page - 1) * limit;
+
+        // 3. Get total number of bookings for this user
+        const totalBookings = await Booking.countDocuments({
+            user: req.user.userId
+        });
+
+        // 4. Fetch paginated bookings
         const bookings = await Booking.find({
             user: req.user.userId
-        }).sort({ createdAt: -1 });
+        })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        // 5. Calculate total pages
+        const totalPages = Math.ceil(totalBookings / limit);
 
         return res.status(200).json({
             success: true,
             message: "Bookings fetched successfully",
-            data: bookings
+            data: bookings,
+            pagination: {
+                totalBookings,
+                currentPage: page,
+                totalPages,
+                limit,
+                hasNextPage: page < totalPages,
+                hasPreviousPage: page > 1
+            }
         });
 
     } catch (error) {
@@ -127,6 +158,7 @@ const getMyBookings = async (req, res) => {
         });
     }
 };
+
 
 const getBookingById = async (req, res) => {
     try {
