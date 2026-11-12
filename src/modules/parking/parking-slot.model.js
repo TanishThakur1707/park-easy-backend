@@ -32,6 +32,13 @@ const parkingSlotSchema = new mongoose.Schema(
     }
 );
 
+// A parking lot cannot have duplicate slot numbers.
+parkingSlotSchema.index(
+    { parkingLot: 1, slotNumber: 1 },
+    { unique: true }
+);
+
 const ParkingSlot = mongoose.model("ParkingSlot", parkingSlotSchema);
 
 module.exports = ParkingSlot;
+

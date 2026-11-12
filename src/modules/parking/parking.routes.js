@@ -17,6 +17,8 @@ const {
 const {
     validateParkingSearch
 } = require("./parking-search.validation");
+const { generateSlots } = require("./parking-slot-generation.controller");
+const { getAnalytics } = require("./parking-analytics.controller");
 
 const router = express.Router();
 
@@ -32,5 +34,7 @@ router.get("/lots/:lotId/slots", getParkingSlots);
 
 router.get("/slots/:slotId", getParkingSlot);
 router.get("/slots/:slotId/availability", checkSlotAvailability);
+router.post("/lots/:lotId/slots/generate", generateSlots);
+router.get("/lots/:lotId/analytics", getAnalytics);
 
 module.exports = router;
